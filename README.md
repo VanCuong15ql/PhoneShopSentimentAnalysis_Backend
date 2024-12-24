@@ -1,4 +1,4 @@
-run downloadModel.py
-creat folder model and put your model into that
-run npm i && node server.js
-Done
+run downloadModel.py <br>
+creat folder model and put your model into that <br>
+run npm i && node server.js <br>
+Done 
