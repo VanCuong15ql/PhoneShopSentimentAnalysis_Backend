@@ -87,7 +87,6 @@ def predict_sentiment(text, model, tokenizer):
 def main():
     # Kiểm tra nếu có đối số dòng lệnh
     if len(sys.argv) < 2:
-        print("Vui lòng nhập văn bản cần phân tích.")
         sys.exit(1)
 
     # Lấy văn bản từ đối số dòng lệnh
