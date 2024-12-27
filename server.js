@@ -1,206 +1,113 @@
-import React, { useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
-import "./ProductDetail.css";
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const app = express();
 
-function ProductDetail() {
-  const { id } = useParams();
-  const [product, setProduct] = useState(null);
-  const [comment, setComment] = useState("");
-  const [editingCommentId, setEditingCommentId] = useState(null);
-  const [editingText, setEditingText] = useState("");
-  const currentUsername = localStorage.getItem("username") || "Guest";
+// Middleware
+app.use(express.json());
+app.use(cors());
 
-  const allAspects = [
-    'BATTERY', 'CAMERA', 'DESIGN', 'FEATURES', 'GENERAL', 'OTHERS',
-    'PERFORMANCE', 'PRICE', 'SCREEN', 'SER&ACC', 'STORAGE'
-  ];
+// Connect to MongoDB
+mongoose.connect('mongodb+srv://vancuongbui15ql:KMfuoqe6Gjn4UL8Z@cluster0.eglz7.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
 
-  useEffect(() => {
-    fetch(`http://localhost:5000/products/${id}`)
-      .then((res) => res.json())
-      .then((data) => setProduct(data));
-  }, [id]);
+const userSchema = new mongoose.Schema({
+  username: String,
+  password: String,
+});
 
-  const handleComment = async () => {
-    if (!comment.trim()) return;
-  
-    const newComment = {
-      username: currentUsername,
-      text: comment,
-    };
-  
-    const response = await fetch(`http://localhost:5000/products/${id}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newComment),
-    });
-  
-    const result = await response.json();
-    const updatedComment = {
-      ...newComment,
-      aspects: result.aspects,
-    };
-  
-    setProduct({ ...product, comments: [...product.comments, updatedComment] });
-    setComment("");
-  };
+const productSchema = new mongoose.Schema({
+  name: String,
+  image: String,
+  comments: [
+    {
+      id: String,
+      username: String,
+      text: String,
+      aspects: [String],
+    },
+  ],
+});
 
-  const handleEditComment = (commentId) => {
-    const commentToEdit = product.comments.find((c) => c._id === commentId);
-    setEditingCommentId(commentId);
-    setEditingText(commentToEdit.text);
-  };
 
-  const handleSaveEdit = async () => {
-    await fetch(
-      `http://localhost:5000/products/${id}/comments/${editingCommentId}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: editingText }),
-      }
-    );
-    const updatedComments = product.comments.map((c) =>
-      c._id === editingCommentId ? { ...c, text: editingText } : c
-    );
-    setProduct({ ...product, comments: updatedComments });
-    setEditingCommentId(null);
-    setEditingText("");
-  };
+const User = mongoose.model('User', userSchema);
+const Product = mongoose.model('Product', productSchema);
 
-  const getAspectClass = (aspect) => {
-    if (aspect.includes("Positive")) return "aspect-positive";
-    if (aspect.includes("Neutral")) return "aspect-neutral";
-    if (aspect.includes("Negative")) return "aspect-negative";
-    return "";
-  };
+// Routes
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+  const user = new User({ username, password });
+  await user.save();
+  res.status(201).send('User registered');
+});
 
-  const calculateAspectStats = () => {
-    const aspectStats = {};
-    allAspects.forEach(aspect => {
-      aspectStats[aspect] = { Positive: 0, Neutral: 0, Negative: 0 };
-    });
-    if (product && product.comments) {
-      product.comments.forEach((comment) => {
-        if (comment.aspects) {
-          comment.aspects.forEach((aspect) => {
-            const [aspectName, sentiment] = aspect.split('#');
-            if (aspectStats[aspectName]) {
-              aspectStats[aspectName][sentiment]++;
-            }
-          });
-        }
-      });
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  const user = await User.findOne({ username, password });
+  if (user) {
+    res.status(200).json({ username: user.username });
+  } else {
+    res.status(401).send("Invalid credentials");
+  }
+});
+
+
+app.get('/products', async (req, res) => {
+  const products = await Product.find();
+  res.status(200).json(products);
+});
+
+app.get('/products/:id', async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  res.status(200).json(product);
+});
+
+// comment n aspect
+// comment n aspect
+const axios = require('axios');
+
+app.post("/products/:id/comments", async (req, res) => {
+  const { username, text } = req.body;
+  const product = await Product.findById(req.params.id);
+  if (product) {
+    try {
+      const response = await axios.post('http://127.0.0.1:5001/predict', { text });
+      const aspects = response.data?.aspects || [];
+
+      const newComment = { username, text, aspects };
+      product.comments.push(newComment);
+      await product.save();
+      
+      res.status(201).json(newComment);  // Trả về comment mới cùng với các aspects
+    } catch (error) {
+      console.error(`Error: ${error}`);
+      res.status(500).send('Error evaluating aspects');
     }
-    return aspectStats;
-  };
+  } else {
+    res.status(404).send("Product not found");
+  }
+});
 
-  const calculateAspectPercentages = (aspectStats) => {
-    const aspectPercentages = {};
-    Object.keys(aspectStats).forEach(aspect => {
-      const total = aspectStats[aspect].Positive + aspectStats[aspect].Neutral + aspectStats[aspect].Negative;
-      if (total > 0) {
-        aspectPercentages[aspect] = {
-          Positive: (aspectStats[aspect].Positive / total) * 100,
-          Neutral: (aspectStats[aspect].Neutral / total) * 100,
-          Negative: (aspectStats[aspect].Negative / total) * 100,
-        };
-      } else {
-        aspectPercentages[aspect] = { Positive: 0, Neutral: 0, Negative: 0 };
-      }
-    });
-    return aspectPercentages;
-  };
+app.put('/products/:productId/comments/:commentId', async (req, res) => {  
+  const { productId, commentId } = req.params;  
+  const { text } = req.body;  
 
-  const aspectStats = calculateAspectStats();
-  const aspectPercentages = calculateAspectPercentages(aspectStats);
+  const product = await Product.findById(productId);  
+  if (!product) return res.status(404).send('Product not found');  
 
-  if (!product) return <div>Loading...</div>;
+  const comment = product.comments.id(commentId); // Tìm bình luận theo _id  
+  if (!comment) return res.status(404).send('Comment not found');  
 
-  return (
-    <div className="product-detail">
-      <h1>{product.name}</h1>
-      <img src={product.image} alt={product.name} width="300" />
-      <h2>Comments</h2>
-      <div className="comments">
-        {product.comments.map((c) => (
-          <div key={c._id} className="comment-box">
-            {editingCommentId === c._id ? (
-              <div>
-                <div className="comment-header">
-                  <strong>{c.username}:</strong>
-                  <button className="button-edit" onClick={handleSaveEdit}>
-                    Save
-                  </button>
-                </div>
-                <textarea
-                  className="edit-input"
-                  type="text"
-                  value={editingText}
-                  onChange={(e) => setEditingText(e.target.value)}
-                />
-              </div>
-            ) : (
-              <div>
-                <div className="comment-header">
-                  <strong>{c.username}:</strong>
-                  {c.username === currentUsername && (
-                    <button
-                      className="button-edit"
-                      onClick={() => handleEditComment(c._id)}
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-                <p>{c.text}</p>
-                {c.aspects && (
-                  <div className="aspects">
-                    {c.aspects.map((aspect, index) => (
-                      <span key={index} className={`aspect ${getAspectClass(aspect)}`}>
-                        {aspect}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="comment-form">
-        <input
-          type="text"
-          placeholder="Add a comment"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
-        <button onClick={handleComment}>Comment</button>
-      </div>
-      <h2>Aspect Statistics</h2>
-      <div className="aspect-stats">
-        {allAspects.map((aspect, index) => (
-          <div key={index} className="aspect-column">
-            <h3>{aspect}</h3>
-            <div className="aspect-bar">
-              <div
-                className="aspect-bar-positive"
-                style={{ width: `${aspectPercentages[aspect].Positive}%` }}
-              ></div>
-              <div
-                className="aspect-bar-neutral"
-                style={{ width: `${aspectPercentages[aspect].Neutral}%` }}
-              ></div>
-              <div
-                className="aspect-bar-negative"
-                style={{ width: `${aspectPercentages[aspect].Negative}%` }}
-              ></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+  comment.text = text; // Cập nhật nội dung bình luận  
+  await product.save();  
+  res.status(200).send('Comment updated');  
+});
 
-export default ProductDetail;
+
+
+
+app.listen(5000, () => {
+  console.log('Server is running on http://localhost:5000');
+});

@@ -37,3 +37,5 @@ def predict():
 if __name__ == '__main__':
     print("Starting Flask server...")
     app.run(host='0.0.0.0', port=5001)
+#run to
+#python E:/mydocument/study/PhoneShopSentimentAnalysis/server/predict_aspects_service.py
